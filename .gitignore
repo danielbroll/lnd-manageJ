@@ -2,3 +2,7 @@
 !gradle/wrapper/gradle-wrapper.jar
 .idea
 build/
+
+database/
+admin.macaroon
+tls.cert
