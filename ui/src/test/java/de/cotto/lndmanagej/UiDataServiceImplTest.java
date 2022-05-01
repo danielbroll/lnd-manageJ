@@ -19,7 +19,7 @@ import de.cotto.lndmanagej.service.NodeService;
 import de.cotto.lndmanagej.ui.UiDataServiceImpl;
 import de.cotto.lndmanagej.ui.dto.NodeDto;
 import de.cotto.lndmanagej.ui.dto.OpenChannelDto;
-import de.cotto.lndmanagej.ui.dto.StatusModel;
+import de.cotto.lndmanagej.ui.dto.WarningsModel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -80,7 +80,7 @@ class UiDataServiceImplTest {
         when(statusController.isSyncedToChain()).thenReturn(true);
         when(statusController.getBlockHeight()).thenReturn(blockHeight);
         when(warningsController.getWarnings()).thenReturn(warnings);
-        StatusModel expected = new StatusModel(true, blockHeight, warnings);
+        WarningsModel expected = new WarningsModel(warnings);
 
         assertThat(uiDataService.getStatus()).isEqualTo(expected);
     }
