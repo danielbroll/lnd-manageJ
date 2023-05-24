@@ -8,7 +8,9 @@ import de.cotto.lndmanagej.controller.dto.BalanceInformationDto;
 import de.cotto.lndmanagej.controller.dto.ChannelsDto;
 import de.cotto.lndmanagej.model.ChannelId;
 import de.cotto.lndmanagej.model.ChannelRating;
+import de.cotto.lndmanagej.model.CloseInitiator;
 import de.cotto.lndmanagej.model.ClosedChannel;
+import de.cotto.lndmanagej.model.ForceClosedChannel;
 import de.cotto.lndmanagej.model.LocalChannel;
 import de.cotto.lndmanagej.model.Node;
 import de.cotto.lndmanagej.model.PendingOpenChannel;
@@ -25,11 +27,14 @@ import de.cotto.lndmanagej.ui.dto.ClosedChannelDto;
 import de.cotto.lndmanagej.ui.dto.NodeDetailsDto;
 import de.cotto.lndmanagej.ui.dto.NodeDto;
 import de.cotto.lndmanagej.ui.dto.OpenChannelDto;
+import de.cotto.lndmanagej.ui.dto.PendingCloseChannelDto;
 import de.cotto.lndmanagej.ui.dto.PendingOpenChannelDto;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toSet;
 
@@ -74,6 +79,69 @@ public class UiDataServiceImpl extends UiDataService {
         return channelService.getPendingOpenChannels().parallelStream()
                 .map(this::toPendingOpenChannelDto)
                 .toList();
+    }
+
+    public long getLockedBalance() {
+        var lockedClosedCapacity = getSelfForceClosedChannelsForTwoWeeks() // are coins always locked for two weeks?
+                .mapToLong(forceClosedChannel -> forceClosedChannel.getCapacity().satoshis()) // where do I get the last local balance? from the close txn?
+                .sum();
+
+        var lockedClosingCapacity = channelService.getForceClosingChannels().stream()
+                .mapToLong(forceClosedChannel -> forceClosedChannel.getCapacity().satoshis()) // where do I get the last local balance? from the close txn?
+                .sum();
+        return lockedClosedCapacity + lockedClosingCapacity; // todo last local balance instead of whole channel capacity
+    }
+
+    private Stream<ForceClosedChannel> getSelfForceClosedChannelsForTwoWeeks() {
+        var blockHeight = ownNodeService.getBlockHeight();
+        return channelService.getForceClosedChannels().stream()
+                .filter(forceClosedChannel -> forceClosedChannel.getCloseInitiator() == CloseInitiator.LOCAL)
+                .filter(forceClosedChannel -> blockHeight - forceClosedChannel.getCloseHeight() < 2_016);
+    }
+
+    public List<PendingCloseChannelDto> getClosingChannels() {
+        return Stream.of(
+                getWaitingCloseChannels(),
+                getForceClosingChannels(),
+                getClosedChannelsWithLockedLiquidity()
+        ).flatMap(Collection::stream).toList();
+    }
+
+    private List<PendingCloseChannelDto> getClosedChannelsWithLockedLiquidity() {
+        return getSelfForceClosedChannelsForTwoWeeks()
+                .map(forceClosedChannel ->
+                        new PendingCloseChannelDto(
+                                nodeController.getAlias(forceClosedChannel.getRemotePubkey()),
+                                forceClosedChannel.getRemotePubkey(),
+                                forceClosedChannel.getCapacity().satoshis(),
+                                forceClosedChannel.getStatus().privateChannel(),
+                                forceClosedChannel.getCloseInitiator()
+                        )).toList();
+    }
+
+    private List<PendingCloseChannelDto> getForceClosingChannels() {
+        return channelService.getForceClosingChannels().stream()
+                .map(forceClosingChannel ->
+                        new PendingCloseChannelDto(
+                                nodeController.getAlias(forceClosingChannel.getRemotePubkey()),
+                                forceClosingChannel.getRemotePubkey(),
+                                forceClosingChannel.getCapacity().satoshis(),
+                                forceClosingChannel.getStatus().privateChannel(),
+                                CloseInitiator.LOCAL)
+                ).toList();
+    }
+
+
+    private List<PendingCloseChannelDto> getWaitingCloseChannels() {
+        return channelService.getWaitingCloseChannels().stream()
+                .map(waitingCloseChannel ->
+                        new PendingCloseChannelDto(
+                                nodeController.getAlias(waitingCloseChannel.getRemotePubkey()),
+                                waitingCloseChannel.getRemotePubkey(),
+                                waitingCloseChannel.getCapacity().satoshis(),
+                                waitingCloseChannel.getStatus().privateChannel(),
+                                CloseInitiator.LOCAL)
+                ).toList();
     }
 
     private PendingOpenChannelDto toPendingOpenChannelDto(PendingOpenChannel pendingOpenChannel) {
